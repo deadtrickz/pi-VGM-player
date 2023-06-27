@@ -1,7 +1,7 @@
-# PMP4F
+# PVGM4F
 ---
 ---
-- Pi Music Player For Floppies
+- Pi Video Game Music Player For Floppies
 
 ## Requirements
 ---
@@ -25,17 +25,19 @@ sudo apt-get update
 sudo apt-get install -y python3 moc screen
 
 # Download and install VGMPlay
+cd ~
 wget 'https://github.com/vgmrips/vgmplay/archive/refs/heads/master.zip'
 unzip master.zip
 cd vgmplay-master/VGMPlay
 make
-sudo cp VGMPlay /usr/local/bin/vgmplay
+sudo make install
+sudo make play_install
 cd ~
 ```
 
 add the python script
 ```
-sudo nano /usr/local/bin/PMP4F.py
+sudo nano /usr/local/bin/PVGMP4F.py
 ```
 ```
 #!/usr/bin/env python3
@@ -45,6 +47,7 @@ import logging
 import os
 import subprocess
 import time
+import logging.handlers
 
 FLOPPY_DEV = '/dev/sda'
 FLOPPY_MOUNT = '/mnt/floppy'
@@ -122,7 +125,14 @@ def handle_spc(folder_path, debug):
             logging.debug('No .m3u files found.')
 
 def main(debug):
-    logging.basicConfig(level=logging.DEBUG if debug else logging.INFO)
+    log_handler = logging.handlers.RotatingFileHandler('/var/log/PVGMP4F.log', maxBytes=5000, backupCount=5)
+    log_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    log_handler.setFormatter(log_format)
+    
+    logger = logging.getLogger()
+    logger.addHandler(log_handler)
+    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    
     while True:
         mount_floppy()
         if os.path.ismount(FLOPPY_MOUNT):
@@ -142,44 +152,49 @@ if __name__ == '__main__':
 
 Change the ownership and permission of the script
 ```
-sudo chmod +x /usr/local/bin/PMP4F.py
+sudo chmod +x /usr/local/bin/PVGMP4F.py
 ```
 ```
-sudo chown music:music /usr/local/bin/PMP4F.py
+sudo chown music:music /usr/local/bin/PVGMP4F.py
 ```
 
 Create the service
 ```
-sudo nano /etc/systemd/system/pmp4f.service
+sudo nano /etc/systemd/system/pvgmp4f.service
 ```
 ```
 [Unit]
-Description=Pi Music Player 4 Floppies
+Description=Pi Video Game Music Player 4 Floppies
 After=multi-user.target
 
 [Service]
 User=music
 Group=music
-ExecStart=/usr/local/bin/PMP4F.py
+ExecStart=/usr/local/bin/PVGMP4F.py
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+Create the log and change permissions to it
+```
+sudo touch /var/log/PVGMP4F.log && sudo chown music:music /var/log/PVGMP4F.log
+```
+
 Create the udev rule to ensure the floppy drive is mounted
 ```
-sudo nano /etc/udev/rules.d/99-pmp4f.rules
+sudo nano /etc/udev/rules.d/99-pvgmp4f.rules
 ```
 ```
-KERNEL=="sda", ACTION=="change", RUN+="/bin/systemctl start pmp4f"
+KERNEL=="sda", ACTION=="change", RUN+="/bin/systemctl start pvgmp4f"
 ```
 
 Set permissions
 ```
 sudo mkdir /mnt/floppy
 sudo chown music:music /mnt/floppy
-sudo chown music:music /usr/local/bin/PMP4F.py
+sudo chown music:music /usr/local/bin/PVGMP4F.py
 ```
 
 Update the sudoers file by adding these lines to the bottom
@@ -194,8 +209,8 @@ music ALL=NOPASSWD: /bin/umount
 
 Enable and Start the service
 ```
-sudo systemctl enable pmp4f
-sudo systemctl start pmp4f
+sudo systemctl enable pvgmp4f
+sudo systemctl start pvgmp4f
 ```
 
 Reload the udev rules
@@ -211,7 +226,7 @@ sudo udevadm control --reload-rules && udevadm trigger
 
 
 
-## OLD STUFF TO ADD
+## OLD STUFF TO GO THROUGH
 
 ## Copying files to the floppy with SCP
 - the home directory of the user should have a "music" folder
