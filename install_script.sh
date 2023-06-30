@@ -93,7 +93,8 @@ def unmount_floppy():
 def is_process_running(process):
     if process is None:
         return False
-    # If the process is still running, returncode should be None
+    # Check the status of the process; continue if running, else return False
+    process.poll()
     return process.returncode is None
 
 def is_floppy_mounted():
