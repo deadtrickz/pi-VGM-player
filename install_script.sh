@@ -13,7 +13,7 @@ sleep 5
 
 # Install Python3, MOC and Screen
 echo "Installing Python3, MOC, and Screen..."
-sudo apt-get install -y python3 moc screen unzip
+sudo apt-get install -y python3 moc screen unzip libao-dev libdbus-1-dev moc-ffmpeg-plugin
 sleep 5
 
 # Create user 'music' with password PVGMP4F and adding it to appropriate groups
@@ -52,98 +52,135 @@ VGZ_PLAYER = '/usr/local/bin/vgmplay'
 SPC_PLAYER = '/usr/bin/mocp'
 SCREEN_SESSION_NAME = 'vgmplay_session'
 
+player_process = None
+
 def get_folder_content(folder_path):
     return [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
 
 def kill_process(process_name):
     command = ['pgrep', '-f', process_name]
-    process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if process.returncode == 0:
-        pids = process.stdout.strip().split('\n')
-        for pid in pids:
-            subprocess.run(['kill', pid])
-        print(f'{process_name}: {", ".join(pids)} found and terminated.')
+    try:
+        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if process.returncode == 0:
+            pids = process.stdout.strip().split('\n')
+            for pid in pids:
+                subprocess.run(['kill', pid])
+            logging.debug(f'{process_name}: {", ".join(pids)} found and terminated.')
+    except Exception as e:
+        logging.exception(f'Error occurred when trying to kill process {process_name}: {e}')
 
 def kill_running_players():
+    global player_process
+    player_process = None
     processes = ['vgmplay', 'screen', 'mocp']
     for process in processes:
         kill_process(process)
 
 def mount_floppy():
-    subprocess.run(["mount", "-t", "vfat", "-o", "ro", FLOPPY_DEV, FLOPPY_MOUNT])
-    time.sleep(5)  # give the system time to mount
+    try:
+        subprocess.run(["sudo", "mount", "-t", "vfat", "-o", "ro", FLOPPY_DEV, FLOPPY_MOUNT])
+        time.sleep(5)  # give the system time to mount
+    except Exception as e:
+        logging.exception(f'Error occurred when trying to mount floppy: {e}')
 
 def unmount_floppy():
-    subprocess.run(["umount", FLOPPY_MOUNT])
-    time.sleep(5)  # give the system time to unmount
+    try:
+        subprocess.run(["sudo", "umount", FLOPPY_MOUNT])
+        time.sleep(5)  # give the system time to unmount
+    except Exception as e:
+        logging.exception(f'Error occurred when trying to unmount floppy: {e}')
 
-def handle_vgz(folder_path, debug):
+def is_process_running(process):
+    if process is None:
+        return False
+    # If the process is still running, returncode should be None
+    return process.returncode is None
+
+def is_floppy_mounted():
+    # os.path.ismount will return True if the path is a mount point
+    return os.path.ismount(FLOPPY_MOUNT)
+
+def is_floppy_present():
+    # os.path.exists will return True if the path exists
+    return os.path.exists(FLOPPY_DEV)
+
+def handle_vgz(folder_path):
+    global player_process
     content = get_folder_content(folder_path)
     vgz_files = [f for f in content if f.lower().endswith('.vgz')]
-    if vgz_files and debug:
-        logging.debug('Found .vgz files.')
-
+    logging.debug('Checking for .vgz files.')
     if vgz_files:
         m3u_files = [f for f in content if f.lower().endswith('.m3u')]
         if m3u_files:
             try:
-                if debug:
-                    logging.debug(f'Starting vgmplay with m3u files: {m3u_files}')
+                logging.debug(f'Starting vgmplay with m3u files: {m3u_files}')
                 command = ['screen', '-dmS', SCREEN_SESSION_NAME, VGZ_PLAYER] + m3u_files
-                subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                player_process = subprocess.Popen(command)
             except Exception as e:
-                if debug:
-                    logging.error(f'Failed to start vgmplay: {str(e)}')
-        elif debug:
+                logging.exception(f'Failed to start vgmplay: {e}')
+        else:
             logging.debug('No .m3u files found.')
 
-def handle_spc(folder_path, debug):
+def handle_spc(folder_path):
+    global player_process
     content = get_folder_content(folder_path)
     spc_files = [f for f in content if f.lower().endswith('.spc')]
-    if spc_files and debug:
-        logging.debug('Found .spc files.')
-
+    logging.debug('Checking for .spc files.')
     if spc_files:
         m3u_files = [f for f in content if f.lower().endswith('.m3u')]
         if m3u_files:
             try:
-                if debug:
-                    logging.debug(f'Starting mocp with m3u files: {m3u_files}')
-                command = [SPC_PLAYER, '-S'] + m3u_files
-                subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-                # Start playback after starting MOC server
-                subprocess.run([SPC_PLAYER, '-p'])
-
+                logging.debug(f'Starting mocp with m3u files: {m3u_files}')
+                command = ['mocp', '-S', '-O', 'AutoNext=yes', '-O', 'Precache=no']  # Start the MOC server
+                subprocess.Popen(command)
+                time.sleep(1)  # Give MOC server time to start
+                command = ['mocp', '-a'] + m3u_files  # Add the music files to the playlist
+                subprocess.Popen(command)
+                time.sleep(1)  # Give MOC some time to add files to the playlist
+                command = ['mocp', '-p']  # Start playing
+                player_process = subprocess.Popen(command)
             except Exception as e:
-                if debug:
-                    logging.error(f'Failed to start mocp: {str(e)}')
-        elif debug:
+                logging.exception(f'Failed to start mocp: {e}')
+        else:
             logging.debug('No .m3u files found.')
 
-def main(debug):
-    log_handler = logging.handlers.RotatingFileHandler('/var/log/PVGMP4F.log', maxBytes=5000, backupCount=5)
-    log_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    log_handler.setFormatter(log_format)
-    
-    logger = logging.getLogger()
-    logger.addHandler(log_handler)
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
-    
+def main(debug=False):
+    global player_process
     while True:
-        mount_floppy()
-        if os.path.ismount(FLOPPY_MOUNT):
-            kill_running_players()  # Kill running players before starting
-            handle_vgz(FLOPPY_MOUNT, debug)
-            handle_spc(FLOPPY_MOUNT, debug)
-            unmount_floppy()
+        if is_floppy_present() and not is_floppy_mounted():
+            mount_floppy()
+
+        if is_floppy_mounted():
+            if not is_process_running(player_process):
+                kill_running_players()  # Kill running players before starting
+                handle_vgz(FLOPPY_MOUNT)
+                handle_spc(FLOPPY_MOUNT)
+                # Check if a player process is running after attempting to handle the files
+                if is_process_running(player_process):
+                    while True:
+                        if not is_floppy_present() or not is_floppy_mounted():
+                            kill_running_players()
+                            if is_floppy_mounted():
+                                unmount_floppy()
+                            break
+                        if not is_process_running(player_process):
+                            break
+                        time.sleep(5)
+
         time.sleep(5)
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Play .vgz and .spc files.')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode.')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Music player for floppy disks.')
+    parser.add_argument('-d', '--debug', help='Enable debug logging.', action='store_true')
     args = parser.parse_args()
-    main(args.debug)
+
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.WARNING,
+                        format='%(asctime)s %(levelname)-8s %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S',
+                        handlers=[logging.StreamHandler(), logging.handlers.RotatingFileHandler('/var/log/pvgmp4f/PVGMP4F.log', maxBytes=10000, backupCount=3)])
+
+    main(debug=args.debug)
 EOF
 
 # Make the script executable and change the ownership
@@ -176,13 +213,27 @@ EOF
 
 # Add 'music' user to sudoers file
 echo "Updating sudoers file..."
-echo "music ALL=NOPASSWD: /bin/mount" >> /etc/sudoers
-echo "music ALL=NOPASSWD: /bin/umount" >> /etc/sudoers
+echo "music ALL=NOPASSWD: /usr/bin/mount" >> /etc/sudoers
+echo "music ALL=NOPASSWD: /usr/bin/umount" >> /etc/sudoers
 
 # Create directory for floppy
 echo "Creating directory for floppy..."
 mkdir /mnt/floppy
 sudo chown music:music /mnt/floppy
+
+# Create log file
+echo "Creating log file and directory..."
+sudo mkdir /var/log/pvgmp4f
+sudo chown music:music /var/log/pvgmp4f
+sudo touch /var/log/pvgmp4f/PVGMP4F.log && sudo chown music:music /var/log/pvgmp4f/PVGMP4F.log
+
+#create MOC config
+sudo mkdir ~/home/.moc
+cat << EOF | sudo tee /home/music/.moc/config
+Precache = no
+AutoNext = yes
+EOF
+chown music:music /home/music/.moc/config
 
 # Reload the udev rules
 echo "Reloading udev rules..."
