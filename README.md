@@ -41,6 +41,13 @@ The players run inside screen sessions, allowing them to persist across logouts 
 
 Logs related to the application are stored in /var/log/music_player/music_player.log.
 
+### Tools
+##### m3u-absolute-path.py
+prefixes the entries in the m3u file on the floppy mounted to /mnt/floppy. Required for some reason.
+```
+m3u-absolute-path.py /mnt/floppy/playlist.m3u
+```
+
 ### Troubleshooting
 
 If you encounter any issues with the PVGMP4F application, you can refer to the log file located at /var/log/music_player/music_player.log.
