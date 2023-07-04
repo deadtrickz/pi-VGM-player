@@ -38,6 +38,7 @@ sleep 5
 
 # Download and install gbsplay if not already installed
 echo "Downoading and installing gbsplay"
+echo "If there is stuttering during gbsplay, run the gbsplay-stutter-fix.sh script"
 cd ~
 if [ ! -d "gbsplay" ]; then
     git clone https://github.com/mmitch/gbsplay.git
@@ -136,7 +137,7 @@ def handle_gbs(folder_path):
 
 def main(folder_path):
     logging.basicConfig(level=logging.DEBUG)
-    handle_gbz(folder_path)
+    handle_gbs(folder_path)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='gbsplay player for floppy disks.')
