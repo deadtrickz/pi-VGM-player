@@ -13,7 +13,7 @@ sleep 5
 
 # Install Python3, MOC and Screen if not already installed
 echo "Installing Python3, MOC, and Screen..."
-sudo apt-get install -y python3 moc screen unzip libao-dev libdbus-1-dev moc-ffmpeg-plugin
+sudo apt-get install -y python3 moc screen unzip libao-dev libdbus-1-dev moc-ffmpeg-plugin git
 sleep 5
 
 # Create user 'music' with password PVGMP4F and add it to appropriate groups
@@ -32,6 +32,20 @@ if [ ! -d "vgmplay-master" ]; then
     make
     sudo make install
     sudo make play_install
+    cd ~
+fi
+sleep 5
+
+# Download and install gbsplay if not already installed
+echo "Downoading and installing gbsplay"
+echo "If there is stuttering during gbsplay, run the gbsplay-stutter-fix.sh script"
+cd ~
+if [ ! -d "gbsplay" ]; then
+    git clone https://github.com/mmitch/gbsplay.git
+    cd gbsplay
+    ./configure
+    make
+    sudo make install
     cd ~
 fi
 sleep 5
@@ -97,11 +111,48 @@ if __name__ == '__main__':
     main()
 EOF
 
+cat << 'EOF' | sudo tee /usr/local/bin/gbsplay-pvgmp4f.py
+#!/usr/bin/env python3
+
+import argparse
+import logging
+import os
+import subprocess
+import time
+
+SCREEN_SESSION_NAME = 'gbsplay_session'
+
+def get_folder_content(folder_path):
+    return [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+
+def handle_gbs(folder_path):
+    content = get_folder_content(folder_path)
+    gbs_file = [f for f in content if f.lower().endswith('.gbs')]
+    if gbs_file:
+        try:
+            command = ['screen', '-dmS', SCREEN_SESSION_NAME, '/usr/local/bin/gbsplay'] + gbs_file
+            subprocess.run(command, check=True)
+        except Exception as e:
+            logging.exception(f'Failed to start gbsplay: {e}')
+
+def main(folder_path):
+    logging.basicConfig(level=logging.DEBUG)
+    handle_gbs(folder_path)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='gbsplay player for floppy disks.')
+    parser.add_argument('folder_path', type=str, help='Path to the folder containing the music files.')
+    args = parser.parse_args()
+    main(args.folder_path)
+EOF
+
 # Make the player scripts executable and change the ownership
 echo "Making player scripts executable and changing ownership..."
 sudo chmod +x /usr/local/bin/vgmplay-pvgmp4f.py
 sudo chmod +x /usr/local/bin/mocp-pvgmp4f.py
+sudo chmod +x /usr/local/bin/gbsplay-pvgmp4f.py
 sudo chown music:music /usr/local/bin/vgmplay-pvgmp4f.py
+sudo chown music:music /usr/local/bin/gbsplay-pvgmp4f.py
 sudo chown music:music /usr/local/bin/mocp-pvgmp4f.py
 
 # Add the main script
@@ -143,11 +194,18 @@ while true; do
                 else
                     echo "$(date) - MOC is already running" | tee -a $LOGFILE
                 fi
+            elif [ -b /dev/sda ] && ls $FLOPPY_PATH/*.gbs &> /dev/null; then
+                echo "$(date) - gbs file found" | tee -a $LOGFILE
+                if ! screen -list | grep -q "gbsplay"; then
+                    echo "$(date) - Starting gbsplay" | tee -a $LOGFILE
+                    screen -dmS gbsplay /usr/local/bin/gbsplay-pvgmp4f.py /mnt/floppy
+                fi
             else
                 echo "$(date) - Music files not found" | tee -a $LOGFILE
                 # Stop vgmplay and mocp since music files are not found
                 echo "$(date) - Stopping music" | tee -a $LOGFILE
                 screen -S vgmplay -X quit
+                screen -S gbsplay -X quit
                 /usr/bin/mocp -x &>>$LOGFILE
             fi
         else
