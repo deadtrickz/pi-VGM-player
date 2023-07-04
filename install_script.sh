@@ -121,35 +121,52 @@ while true; do
             sudo mount -t vfat -o ro /dev/sda $FLOPPY_PATH
             sleep 5
         fi
-        echo "$(date) - Searching for music files" | tee -a $LOGFILE
-        if ls $FLOPPY_PATH/*.vgz &> /dev/null; then
-            echo "$(date) - VGZ files found" | tee -a $LOGFILE
-            if ! screen -list | grep -q "vgmplay"; then
-                echo "$(date) - Starting vgmplay" | tee -a $LOGFILE
-                screen -dmS vgmplay /usr/local/bin/vgmplay-pvgmp4f.py
-            fi
-        elif ls $FLOPPY_PATH/*.spc &> /dev/null || ls $FLOPPY_PATH/*.m3u &> /dev/null; then
-            echo "$(date) - SPC files or M3U playlist found" | tee -a $LOGFILE
-            if ! ps aux | grep -q "[m]ocp"; then
-                echo "$(date) - Starting moc server" | tee -a $LOGFILE
-                /usr/local/bin/mocp-pvgmp4f.py &>>$LOGFILE
-                sleep 5
+        if [ -r "$FLOPPY_PATH" ]; then
+            echo "$(date) - Searching for music files" | tee -a $LOGFILE
+            if [ -b /dev/sda ] && ls $FLOPPY_PATH/*.vgz &> /dev/null; then
+                echo "$(date) - VGZ files found" | tee -a $LOGFILE
+                if ! screen -list | grep -q "vgmplay"; then
+                    echo "$(date) - Starting vgmplay" | tee -a $LOGFILE
+                    screen -dmS vgmplay /usr/local/bin/vgmplay-pvgmp4f.py /mnt/floppy
+                fi
+            elif [ -b /dev/sda ] && (ls $FLOPPY_PATH/*.spc &> /dev/null || ls $FLOPPY_PATH/*.m3u &> /dev/null); then
+                echo "$(date) - SPC files or M3U playlist found" | tee -a $LOGFILE
                 if ! ps aux | grep -q "[m]ocp"; then
-                    echo "$(date) - Failed to start moc" | tee -a $LOGFILE
+                    echo "$(date) - Starting moc server" | tee -a $LOGFILE
+                    /usr/local/bin/mocp-pvgmp4f.py &>>$LOGFILE
+                    sleep 5
+                    if ! ps aux | grep -q "[m]ocp"; then
+                        echo "$(date) - Failed to start moc" | tee -a $LOGFILE
+                    else
+                        echo "$(date) - MOC state: $(/usr/bin/mocp -i | tee -a $LOGFILE)"
+                    fi
                 else
-                    echo "$(date) - MOC state: $(/usr/bin/mocp -i | tee -a $LOGFILE)"
+                    echo "$(date) - MOC is already running" | tee -a $LOGFILE
                 fi
             else
-                echo "$(date) - MOC is already running" | tee -a $LOGFILE
+                echo "$(date) - Music files not found" | tee -a $LOGFILE
+                # Stop vgmplay and mocp since music files are not found
+                echo "$(date) - Stopping music" | tee -a $LOGFILE
+                screen -S vgmplay -X quit
+                /usr/bin/mocp -x &>>$LOGFILE
             fi
         else
-            echo "$(date) - Music files not found" | tee -a $LOGFILE
+            echo "$(date) - Floppy disk not accessible, stopping music" | tee -a $LOGFILE
+            screen -S vgmplay -X quit
+            /usr/bin/mocp -x &>>$LOGFILE
+            if grep -qs "$FLOPPY_PATH" /proc/mounts; then
+                echo "$(date) - Unmounting floppy" | tee -a $LOGFILE
+                sudo umount /mnt/floppy
+            fi
         fi
     else
         echo "$(date) - Floppy disk not detected, stopping music" | tee -a $LOGFILE
         screen -S vgmplay -X quit
         /usr/bin/mocp -x &>>$LOGFILE
-        sudo umount /mnt/floppy
+        if grep -qs "$FLOPPY_PATH" /proc/mounts; then
+            echo "$(date) - Unmounting floppy" | tee -a $LOGFILE
+            sudo umount /mnt/floppy
+        fi
     fi
     echo "$(date) - Sleeping for 5 seconds" | tee -a $LOGFILE
     sleep 5
