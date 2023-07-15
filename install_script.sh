@@ -66,22 +66,22 @@ SCREEN_SESSION_NAME = 'vgmplay_session'
 def get_folder_content(folder_path):
     return [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
 
-def handle_vgz(folder_path):
+def handle_m3u(folder_path):
     content = get_folder_content(folder_path)
-    vgz_files = [f for f in content if f.lower().endswith('.vgz')]
-    if vgz_files:
+    m3u_files = [f for f in content if f.lower().endswith('.m3u')]
+    if m3u_files:
         try:
-            command = ['screen', '-dmS', SCREEN_SESSION_NAME, '/usr/local/bin/vgmplay'] + vgz_files
+            command = ['screen', '-dmS', SCREEN_SESSION_NAME, '/usr/local/bin/vgmplay'] + m3u_files
             subprocess.run(command, check=True)
         except Exception as e:
             logging.exception(f'Failed to start VGMPlay: {e}')
 
 def main(folder_path):
     logging.basicConfig(level=logging.DEBUG)
-    handle_vgz(folder_path)
+    handle_m3u(folder_path)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='VGMPlay player for floppy disks.')
+    parser = argparse.ArgumentParser(description='VGMPlay player for M3U playlists.')
     parser.add_argument('folder_path', type=str, help='Path to the folder containing the music files.')
     args = parser.parse_args()
     main(args.folder_path)
